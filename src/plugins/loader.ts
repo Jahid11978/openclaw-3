@@ -1317,13 +1317,6 @@ function describePluginModuleExportShape(
   return details;
 }
 
-function formatMissingPluginRegisterError(moduleExport: unknown, env: NodeJS.ProcessEnv): string {
-  const message = "plugin export missing register/activate";
-  if (!isPluginLoadDebugEnabled(env)) {
-    return message;
-  }
-  return `${message} (module shape: ${describePluginModuleExportShape(moduleExport).join("; ")})`;
-}
 
 function mergeChannelPluginSection<T>(
   baseValue: T | undefined,
@@ -2855,8 +2848,16 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       }
 
       if (typeof register !== "function") {
-        logger.error(`[plugins] ${record.id} missing register/activate export`);
-        pushPluginLoadError(formatMissingPluginRegisterError(mod, env));
+        const resolvedModule = (resolved?.definition ?? {}) as { kind?: unknown };
+        const isBundledChannelEntry = resolvedModule.kind === "bundled-channel-entry";
+        if (isBundledChannelEntry) {
+          pushPluginLoadError(
+            "bundled channel entry loaded via legacy plugin loader — use setup-runtime loader instead",
+          );
+        } else {
+          logger.error(`[plugins] ${record.id} missing register/activate export`);
+          pushPluginLoadError("plugin export missing register/activate");
+        }
         continue;
       }
 
@@ -3280,8 +3281,17 @@ export async function loadOpenClawPluginCliRegistry(
     }
 
     if (typeof register !== "function") {
-      logger.error(`[plugins] ${record.id} missing register/activate export`);
-      pushPluginLoadError(formatMissingPluginRegisterError(mod, env));
+      const resolvedModule = (resolved?.definition ?? {}) as { kind?: unknown };
+      const isBundledChannelEntry = resolvedModule.kind === "bundled-channel-entry";
+      if (isBundledChannelEntry) {
+        logger.error(
+          `[plugins] ${record.id} is a bundled channel entry that requires setup-runtime; ensure plugin is loaded via bundled channel discovery, not legacy plugin loader`,
+        );
+        pushPluginLoadError("bundled channel entry requires setup-runtime loader");
+      } else {
+        logger.error(`[plugins] ${record.id} missing register/activate export`);
+        pushPluginLoadError("plugin export missing register/activate");
+      }
       continue;
     }
 
